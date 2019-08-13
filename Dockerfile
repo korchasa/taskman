@@ -1,6 +1,7 @@
 FROM korchasa/go-build:latest as build
 WORKDIR /app
 
+ENV GOFLAGS=""
 ADD ./*.go .
 ADD ./go.mod .
 RUN set -ex && \
