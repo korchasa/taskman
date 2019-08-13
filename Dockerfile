@@ -11,6 +11,5 @@ RUN \
 ADD ./example ./example
 RUN \
     cd ./example && \
-    mv ./main.go.txt ./main.go && \
     golangci-lint run ./... && \
     go run ./main.go Hello -who=me -times=5
