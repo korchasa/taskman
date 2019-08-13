@@ -1,4 +1,4 @@
-module taskman
+module github.com/korchasa/taskman
 
 go 1.12
 
