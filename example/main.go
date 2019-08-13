@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/bitfield/script"
+	"github.com/korchasa/taskman"
 	"log"
 	"strconv"
-	"github.com/korchasa/taskman"
 )
 
 // Hello says Hello
