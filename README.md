@@ -5,9 +5,9 @@
 package main
 
 import (
-	"github.com/bitfield/script"
 	"log"
 	"strconv"
+	"taskman"
 )
 
 // Hello says Hello
@@ -23,8 +23,9 @@ func Hello(who string, times string) {
 }
 
 func main() {
-	Run(Hello, Exec)
+	taskman.Run(Hello)
 }
+
 ```
 
 ## List tasks
