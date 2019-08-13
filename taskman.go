@@ -15,6 +15,7 @@ import (
 
 func Run(taskPtrs ...interface{}) {
 	log.SetFlags(0)
+	log.SetOutput(os.Stdout)
 	file := getTasksFile()
 	tasks := extractTasks(file, taskPtrs)
 	if len(os.Args) < 2 {
