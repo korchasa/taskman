@@ -17,23 +17,16 @@ func Run(taskPtrs ...interface{}) {
 	log.SetFlags(0)
 	file := getTasksFile()
 	tasks := extractTasks(file, taskPtrs)
-	for _, t := range tasks {
-		log.Println("Name:", t.name)
-		log.Printf("Type:%#v\n", t.fn)
-	}
 	if len(os.Args) < 2 {
 		usage(tasks)
 		os.Exit(1)
 	} else {
-		task, args, err := resolve(tasks, os.Args)
+		task, err := resolve(tasks, os.Args)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		log.Printf("Task %s%s%s: %s%s%s\n", Ok, task.name, Reset, Info, strings.Join(args, ", "), Reset)
-		err = call(task.fn, args...)
-		if err != nil {
-			log.Fatalln(err)
-		}
+		log.Printf("Task %s%s%s\n", Ok, task.name, Reset)
+		task.call()
 	}
 }
 
@@ -54,18 +47,6 @@ func getTasksFile() string {
 	return file
 }
 
-type task struct {
-	name string
-	doc  string
-	fn   reflect.Value
-	args []arg
-}
-
-type arg struct {
-	name   string
-	typeof string
-}
-
 func extractTasks(file string, fptrs []interface{}) (tasks []task) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
@@ -78,24 +59,23 @@ func extractTasks(file string, fptrs []interface{}) (tasks []task) {
 			continue
 		}
 		for _, fptr := range fptrs {
-			typ := reflect.TypeOf(fptr)
-			//val := reflect.ValueOf(fptr)
-			log.Printf("%#v %s", typ, fn.Name.Name)
-			//if typ.Name() == fn.Name.Name {
-			//	t := task{
-			//		name: fn.Name.Name,
-			//		doc:  strings.Trim(strings.Replace(fn.Doc.Text(), fn.Name.Name, "", 1), "\n "),
-			//		fn: reflect.ValueOf(fptr),
-			//	}
-			//	for _, a := range fn.Type.Params.List {
-			//		t.args = append(t.args, arg{
-			//			name:   a.Names[0].String(),
-			//			typeof: fmt.Sprint(a.Type),
-			//		})
-			//	}
-			//	tasks = append(tasks, t)
-			//	break
-			//}
+			fnc := runtime.FuncForPC(reflect.ValueOf(fptr).Pointer())
+			name := strings.Split(fnc.Name(), ".")[1]
+			if name == fn.Name.Name {
+				t := task{
+					name: fn.Name.Name,
+					doc:  strings.Trim(strings.Replace(fn.Doc.Text(), fn.Name.Name, "", 1), "\n "),
+					fn:   reflect.ValueOf(fptr),
+				}
+				for _, a := range fn.Type.Params.List {
+					t.args = append(t.args, arg{
+						name:   a.Names[0].String(),
+						typeof: fmt.Sprint(a.Type),
+					})
+				}
+				tasks = append(tasks, t)
+				break
+			}
 		}
 	}
 	return
@@ -103,7 +83,7 @@ func extractTasks(file string, fptrs []interface{}) (tasks []task) {
 
 func usage(tasks []task) {
 	log.Println()
-	log.Printf("%sUsage:%s\n", Info, Reset)
+	log.Printf("%sUsage:%s\n", Title, Reset)
 	log.Printf("  %s [command] [arguments]\n", os.Args[0])
 	log.Println()
 
@@ -114,17 +94,17 @@ func usage(tasks []task) {
 	//	}
 	//}
 
-	log.Printf("%sCommands:%s\n", Info, Reset)
+	log.Printf("%sCommands:%s\n", Title, Reset)
 	for _, t := range tasks {
 		var args []string
 		for _, a := range t.args {
-			args = append(args, fmt.Sprintf("%s%s%s:%s", Info, a.name, Reset, a.typeof))
+			args = append(args, fmt.Sprintf("%s%s%s", Info, a.name, Reset))
 		}
-		log.Printf("  %s%s%s  - %s [ %s ]\n", Ok, t.name, Reset, t.doc, strings.Join(args, " "))
+		log.Printf("  %s%s%s  - %s. Arguments: %s\n", Ok, t.name, Reset, t.doc, strings.Join(args, ", "))
 	}
 }
 
-func resolve(tasks []task, args []string) (*task, []string, error) {
+func resolve(tasks []task, args []string) (*task, error) {
 	var ct *task
 
 	for _, t := range tasks {
@@ -134,7 +114,7 @@ func resolve(tasks []task, args []string) (*task, []string, error) {
 		}
 	}
 	if ct == nil {
-		return nil, nil, fmt.Errorf("task not found")
+		return nil, fmt.Errorf("task not found")
 	}
 
 	fs := flag.NewFlagSet(ct.name, flag.ExitOnError)
@@ -145,30 +125,41 @@ func resolve(tasks []task, args []string) (*task, []string, error) {
 
 	err := fs.Parse(args[2:])
 	if err != nil {
-		return nil, nil, fmt.Errorf("bad command arguments: %s", err)
+		return nil, fmt.Errorf("bad command arguments: %s", err)
 	}
 
-	var callArgs []string
-	for _, f := range flags {
-		callArgs = append(callArgs, *f)
+	for i, f := range flags {
+		ct.args[i].value = *f
 	}
 
-	return ct, callArgs, nil
+	return ct, nil
 }
 
-func call(f reflect.Value, params ...string) error {
-	in := make([]reflect.Value, len(params))
-	for k, param := range params {
-		in[k] = reflect.ValueOf(param)
+type task struct {
+	name string
+	doc  string
+	fn   reflect.Value
+	args []arg
+}
+
+type arg struct {
+	name   string
+	typeof string
+	value  string
+}
+
+func (t *task) call() {
+	in := make([]reflect.Value, len(t.args))
+	for k, param := range t.args {
+		in[k] = reflect.ValueOf(param.value)
 	}
-	f.Call(in)
-	return nil
+	t.fn.Call(in)
 }
 
 type color string
 
 const (
-	Err   color = "\u001b[31m"
+	Title color = "\u001b[35m"
 	Info  color = "\u001b[36m"
 	Ok    color = "\u001b[32m"
 	Reset color = "\u001b[0m"

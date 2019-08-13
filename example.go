@@ -1,27 +1,33 @@
 package main
 
 import (
-	"fmt"
+	"github.com/bitfield/script"
 	"log"
 	"strconv"
 )
 
-// TaskHello says Hello
-func TaskHello(who string, times string) {
+// Hello says Hello
+func Hello(who string, times string) {
 	tt, err := strconv.Atoi(times)
 	if err != nil {
 		log.Fatal(err)
 	}
 	for tt > 0 {
-		fmt.Printf("Hello, %s!", who)
+		log.Printf("Hello, %s!\n", who)
 		tt--
 	}
 }
 
-// NotATask says "Hello, %who!", %times times
-func NotATask() {
+// Exec executes shell cmd
+func Exec(cmd string) {
+	p := script.Exec(cmd)
+	output, err := p.String()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println(output)
 }
 
 func main() {
-	Run(TaskHello)
+	Run(Hello, Exec)
 }
