@@ -4,13 +4,15 @@ ADD . .
 
 #ENV GOFLAGS="-mod=vendor"
 RUN \
+    cd example && \
+    mv ./main.go.txt ./main.go && \
     echo "  ## Install deps" && \
-    go install && \
+    go get && \
     echo "  ## Test" && \
     go test -cover -v -count=1 && \
     echo "  ## Lint" && \
     golangci-lint run ./... && \
     echo "  ## Build" && \
-    gitget all && \
-    go build -o app -ldflags "-s -w -X 'main.version=$(gitget version)' -X 'main.commit=$(gitget commit)' -X 'main.date=$(gitget date)'" . && \
+    go build && \
+    ./example && \
     echo "  ## Done"

@@ -5,9 +5,9 @@
 package main
 
 import (
-	"log"
-	"strconv"
-	"taskman"
+    "github.com/korchasa/taskman"
+    "log"
+    "strconv"
 )
 
 // Hello says Hello
