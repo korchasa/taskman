@@ -1,5 +1,7 @@
 # taskman
 
+[![Build Status](https://travis-ci.org/korchasa/taskman.svg?branch=master)](https://travis-ci.org/korchasa/taskman)
+
 ## Write tasks with the power of go
 ```go
 package main
