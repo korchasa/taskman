@@ -119,6 +119,8 @@ func resolve(tasks []task, args []string) (*task, error) {
 			flags = append(flags, fs.String(a.name, "", ""))
 		case "int":
 			flags = append(flags, fs.Int(a.name, 0, ""))
+		case "bool":
+			flags = append(flags, fs.Bool(a.name, false, ""))
 		default:
 			return nil, fmt.Errorf("unsupported task argument type `%s`", a.typeof)
 		}
@@ -131,14 +133,14 @@ func resolve(tasks []task, args []string) (*task, error) {
 
 	for i, f := range flags {
 		switch t := f.(type) {
-		default:
-			return nil, fmt.Errorf("unsupported task argument type `%s`", t)
-		case *bool:
+		case *string:
 			ct.args[i].value = reflect.ValueOf(*t)
 		case *int:
 			ct.args[i].value = reflect.ValueOf(*t)
-		case *string:
+		case *bool:
 			ct.args[i].value = reflect.ValueOf(*t)
+		default:
+			return nil, fmt.Errorf("unsupported task argument type `%s`", t)
 		}
 	}
 

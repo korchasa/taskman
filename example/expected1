@@ -1,6 +1,7 @@
-Task Hello
-Hello, me!
-Hello, me!
-Hello, me!
-Hello, me!
-Hello, me!
+
+Usage:
+  /tmp/main [command] [arguments]
+
+Commands:
+  Hello  - says Hello. Arguments: who, times, show
+  Exec  - executes shell cmd. Arguments: cmd

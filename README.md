@@ -11,11 +11,14 @@ import (
 )
 
 // Hello says Hello
-func Hello(who string, times int) {
-    for times > 0 {
+func Hello(who string, times int, show bool) {
+	if !show {
+		return
+	}
+	for times > 0 {
 		log.Printf("Hello, %s!\n", who)
 		times--
-	}	
+	}
 }
 
 func main() {
@@ -33,13 +36,13 @@ Usage:
   ./taskman [command] [arguments]
 
 Commands:
-  Hello  - says Hello. Arguments: who, times
+  Hello  - says Hello. Arguments: who, times, show
 ```
 
 ## Run them
 
 ```bash
-go build && ./taskman Hello -who=me -times=5
+go build && ./taskman Hello -who=me -times=5 -show
 Task Hello
 Hello, me!
 Hello, me!
