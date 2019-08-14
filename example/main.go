@@ -4,18 +4,13 @@ import (
 	"github.com/bitfield/script"
 	"github.com/korchasa/taskman"
 	"log"
-	"strconv"
 )
 
 // Hello says Hello
-func Hello(who string, times string) {
-	tt, err := strconv.Atoi(times)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for tt > 0 {
+func Hello(who string, times int) {
+	for times > 0 {
 		log.Printf("Hello, %s!\n", who)
-		tt--
+		times--
 	}
 }
 

@@ -88,13 +88,6 @@ func usage(tasks []task) {
 	log.Printf("  %s [command] [arguments]\n", os.Args[0])
 	log.Println()
 
-	//maxLen := 0
-	//for _, t := range tasks {
-	//	if len(t.name) > maxLen {
-	//		maxLen = len(t.name)
-	//	}
-	//}
-
 	log.Printf("%sCommands:%s\n", Title, Reset)
 	for _, t := range tasks {
 		var args []string
@@ -119,9 +112,16 @@ func resolve(tasks []task, args []string) (*task, error) {
 	}
 
 	fs := flag.NewFlagSet(ct.name, flag.ExitOnError)
-	var flags []*string
+	var flags []interface{}
 	for _, a := range ct.args {
-		flags = append(flags, fs.String(a.name, "", ""))
+		switch a.typeof {
+		case "string":
+			flags = append(flags, fs.String(a.name, "", ""))
+		case "int":
+			flags = append(flags, fs.Int(a.name, 0, ""))
+		default:
+			return nil, fmt.Errorf("unsupported task argument type `%s`", a.typeof)
+		}
 	}
 
 	err := fs.Parse(args[2:])
@@ -130,7 +130,16 @@ func resolve(tasks []task, args []string) (*task, error) {
 	}
 
 	for i, f := range flags {
-		ct.args[i].value = *f
+		switch t := f.(type) {
+		default:
+			return nil, fmt.Errorf("unsupported task argument type `%s`", t)
+		case *bool:
+			ct.args[i].value = reflect.ValueOf(*t)
+		case *int:
+			ct.args[i].value = reflect.ValueOf(*t)
+		case *string:
+			ct.args[i].value = reflect.ValueOf(*t)
+		}
 	}
 
 	return ct, nil
@@ -146,13 +155,13 @@ type task struct {
 type arg struct {
 	name   string
 	typeof string
-	value  string
+	value  reflect.Value
 }
 
 func (t *task) call() {
 	in := make([]reflect.Value, len(t.args))
 	for k, param := range t.args {
-		in[k] = reflect.ValueOf(param.value)
+		in[k] = param.value
 	}
 	t.fn.Call(in)
 }
