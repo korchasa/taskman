@@ -38,7 +38,8 @@ Usage:
   ./taskman [command] [arguments]
 
 Commands:
-  Hello  - says Hello. Arguments: who, times, show
+  Hello -who=string -times=int -show=bool  - says Hello
+  Exec -cmd=string  - executes shell cmd
 ```
 
 ## Run them
