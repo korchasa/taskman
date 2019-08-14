@@ -39,7 +39,6 @@ Usage:
 
 Commands:
   Hello -who=string -times=int -show=bool  - says Hello
-  Exec -cmd=string  - executes shell cmd
 ```
 
 ## Run them
