@@ -92,9 +92,9 @@ func usage(tasks []task) {
 	for _, t := range tasks {
 		var args []string
 		for _, a := range t.args {
-			args = append(args, fmt.Sprintf("%s%s%s", Info, a.name, Reset))
+			args = append(args, fmt.Sprintf("-%s%s%s=%s", Info, a.name, Reset, a.typeof))
 		}
-		log.Printf("  %s%s%s  - %s. Arguments: %s\n", Ok, t.name, Reset, t.doc, strings.Join(args, ", "))
+		log.Printf("  %s%s%s %s  - %s\n", Ok, t.name, Reset, strings.Join(args, " "), t.doc)
 	}
 }
 
