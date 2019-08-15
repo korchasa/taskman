@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -22,12 +23,19 @@ func Run(taskPtrs ...interface{}) {
 		usage(tasks)
 		os.Exit(1)
 	} else {
-		task, err := resolve(tasks, os.Args)
-		if err != nil {
-			log.Fatalln(err)
+		name := os.Args[1]
+		for _, t := range tasks {
+			if t.name == name {
+				err := processArgs(&t, os.Args[2:])
+				if err != nil {
+					log.Fatalln(err)
+				}
+				log.Printf("Task %s%s%s\n", Ok, t.name, Reset)
+				t.call()
+				os.Exit(0)
+			}
 		}
-		log.Printf("Task %s%s%s\n", Ok, task.name, Reset)
-		task.call()
+		log.Fatalf("task %s not found", name)
 	}
 }
 
@@ -87,64 +95,82 @@ func usage(tasks []task) {
 	log.Printf("%sUsage:%s\n", Title, Reset)
 	log.Printf("  %s [command] [arguments]\n", os.Args[0])
 	log.Println()
-
 	log.Printf("%sCommands:%s\n", Title, Reset)
 	for _, t := range tasks {
-		var args []string
+		var flags []string
 		for _, a := range t.args {
-			args = append(args, fmt.Sprintf("-%s%s%s=%s", Info, a.name, Reset, a.typeof))
+			if '*' == a.typeof[0] {
+				flags = append(flags, fmt.Sprintf("-%s%s%s=%s", Info, a.name, Reset, a.typeof))
+			} else {
+				flags = append(flags, fmt.Sprintf("%s%s%s:%s", Info, a.name, Reset, a.typeof))
+			}
 		}
-		log.Printf("  %s%s%s %s  - %s\n", Ok, t.name, Reset, strings.Join(args, " "), t.doc)
+		log.Printf("  %s%s%s %s  - %s\n", Ok, t.name, Reset, strings.Join(flags, " "), t.doc)
 	}
 }
 
-func resolve(tasks []task, args []string) (*task, error) {
-	var ct *task
-
-	for _, t := range tasks {
-		if t.name == args[1] {
-			ct = &t
-			break
-		}
-	}
-	if ct == nil {
-		return nil, fmt.Errorf("task not found")
-	}
-
-	fs := flag.NewFlagSet(ct.name, flag.ExitOnError)
+func processArgs(task *task, args []string) error {
+	fs := flag.NewFlagSet(task.name, flag.ContinueOnError)
 	var flags []interface{}
-	for _, a := range ct.args {
+	for _, a := range task.args {
 		switch a.typeof {
-		case "string":
+		case "*string":
 			flags = append(flags, fs.String(a.name, "", ""))
-		case "int":
+		case "*int":
 			flags = append(flags, fs.Int(a.name, 0, ""))
-		case "bool":
+		case "*bool":
 			flags = append(flags, fs.Bool(a.name, false, ""))
-		default:
-			return nil, fmt.Errorf("unsupported task argument type `%s`", a.typeof)
 		}
 	}
 
-	err := fs.Parse(args[2:])
+	err := fs.Parse(moveArgsFlagsFirst(args))
 	if err != nil {
-		return nil, fmt.Errorf("bad command arguments: %s", err)
+		return fmt.Errorf("bad command arguments: %s", err)
+	}
+
+	for parami, param := range fs.Args() {
+		switch task.args[parami].typeof {
+		case "string":
+			task.args[parami].value = reflect.ValueOf(param)
+		case "int":
+			i, err := strconv.Atoi(param)
+			if err != nil {
+				return fmt.Errorf("can't convert param %s to int: `%s`", task.args[parami].name, err)
+			}
+			task.args[parami].value = reflect.ValueOf(i)
+		default:
+			return fmt.Errorf("unsupported param type `%s`", task.args[parami].typeof)
+		}
 	}
 
 	for i, f := range flags {
+		var val reflect.Value
 		switch t := f.(type) {
 		case *string:
-			ct.args[i].value = reflect.ValueOf(*t)
+			val = reflect.ValueOf(*t)
 		case *int:
-			ct.args[i].value = reflect.ValueOf(*t)
+			val = reflect.ValueOf(*t)
 		case *bool:
-			ct.args[i].value = reflect.ValueOf(*t)
+			val = reflect.ValueOf(*t)
 		default:
-			return nil, fmt.Errorf("unsupported task argument type `%s`", t)
+			return fmt.Errorf("unsupported option type `%s`", t)
+		}
+		task.args[len(fs.Args()) + i].value = val
+	}
+	return nil
+}
+
+func moveArgsFlagsFirst(args []string) []string {
+	var flags []string
+	var params []string
+	for _, a := range args {
+		if '-' == a[0] {
+			flags = append(flags, a)
+		} else {
+			params = append(params, a)
 		}
 	}
-
-	return ct, nil
+	return append(flags, params...)
 }
 
 type task struct {

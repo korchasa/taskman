@@ -7,13 +7,13 @@ import (
 )
 
 // Hello says Hello
-func Hello(who string, times int, show bool) {
-	if !show {
+func Hello(who string, times *int, show *bool) {
+	if !*show {
 		return
 	}
-	for times > 0 {
+	for *times > 0 {
 		log.Printf("Hello, %s!\n", who)
-		times--
+		*times--
 	}
 }
 
