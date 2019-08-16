@@ -8,7 +8,7 @@ import (
 
 // Hello says Hello
 func Hello(who string, times *int, show *bool) {
-	if !*show {
+	if show == nil {
 		return
 	}
 	for *times > 0 {

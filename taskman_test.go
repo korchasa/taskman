@@ -3,117 +3,166 @@ package taskman
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"io/ioutil"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
-func TestResolveSuccess(t *testing.T) {
-	var cases = []struct {
-		name string
-		givenTaskArgs []arg
-		givenOsArgs []string
-		wantedArgsValues []reflect.Value
-		wantedErr error
+func TestExtractTasks(t *testing.T) {
+	code := []byte(`
+package main
+// Hello says Hello
+func Hello(who string, times *int, show *bool) {}
+`)
+	dir, err := ioutil.TempDir("", "example")
+	assert.NoError(t, err)
+	file := filepath.Join(dir, "tmpfile")
+	err = ioutil.WriteFile(file, code, 0666)
+	assert.NoError(t, err)
+	tasks, err := extractTasks(file)
+	assert.NoError(t, err)
+	assert.Equal(t, task{
+		name: "Hello",
+		doc:  "says Hello",
+		args: []arg{
+			{name: "who", typeof: "string"},
+			{name: "times", typeof: "int", optional: true},
+			{name: "show", typeof: "bool", optional: true},
+		},
+	}, tasks[0])
+}
+
+func TestProcessArgsOnly(t *testing.T) {
+	cases := []struct {
+		name             string
+		givenTaskArgs    string
+		givenOsArgs      string
+		wantedArgsValues string
+		wantedErr        error
 	}{
-		{
-			"one string param",
-			[]arg{{"str", "string", reflect.Value{}}},
-			[]string{"bar"},
-			[]reflect.Value{reflect.ValueOf("bar")},
-			nil,
-		},
-		{
-			"all types params",
-			[]arg{
-				{"str", "string", reflect.Value{}},
-				{"int", "int", reflect.Value{}},
-			},
-			[]string{
-				"bar", "5",
-			},
-			[]reflect.Value{
-				reflect.ValueOf("bar"),
-				reflect.ValueOf(5),
-			},
-			nil,
-		},
-		{
-			"one string option",
-			[]arg{{"str", "*string", reflect.Value{}}},
-			[]string{"-str=bar"},
-			[]reflect.Value{reflect.ValueOf("bar")},
-			nil,
-		},
-		{
-			"all types options",
-			[]arg{
-				{"str", "*string", reflect.Value{}},
-				{"int", "*int", reflect.Value{}},
-				{"bool", "*bool", reflect.Value{}},
-			},
-			[]string{
-				"-str=bar",
-				"-int=5",
-				"-bool",
-			},
-			[]reflect.Value{
-				reflect.ValueOf("bar"),
-				reflect.ValueOf(5),
-				reflect.ValueOf(true),
-			},
-			nil,
-		},
-		{
-			"one param and one option, option first",
-			[]arg{{"param", "string", reflect.Value{}}, {"opt", "*string", reflect.Value{}}},
-			[]string{"-opt=baz", "bar"},
-			[]reflect.Value{reflect.ValueOf("bar"), reflect.ValueOf("baz")},
-			nil,
-		},
-		{
-			"one param and one option, param first",
-			[]arg{{"param", "string", reflect.Value{}}, {"opt", "*string", reflect.Value{}}},
-			[]string{"bar", "-opt=baz"},
-			[]reflect.Value{reflect.ValueOf("bar"), reflect.ValueOf("baz")},
-			nil,
-		},
-		{
-			"params and options together",
-			[]arg{
-				{"command", "string", reflect.Value{}},
-				{"times", "int", reflect.Value{}},
-				{"format", "*string", reflect.Value{}},
-				{"limit", "*int", reflect.Value{}},
-				{"verbose", "*bool", reflect.Value{}},
-			},
-			[]string{
-				"replicate",
-				"5",
-				"-format=json",
-				"-limit=100",
-				"-verbose",
-			},
-			[]reflect.Value{
-				reflect.ValueOf("replicate"),
-				reflect.ValueOf(5),
-				reflect.ValueOf("json"),
-				reflect.ValueOf(100),
-				reflect.ValueOf(true),
-			},
-			nil,
-		},
+		{"one string nothing", "s1", "", "", nil},
+		{"one string param", "s1", "v1", "v1", nil},
+		{"one string option", "s1", "-s1=v1", "v1", nil},
+		{"one string option alt", "s1", "-s1 v1", "v1", nil},
+		{"one param and one option, option first", "s1 | s2", "-s2=v2 | s1", "s1 | s2", nil},
+		{"one param and one option, param first", "s1 | s2", "s1 | -s2=v2", "s1 | s2", nil},
 	}
 	for _, tt := range cases {
 		t.Run(fmt.Sprintf("`%s`", tt.name), func(t *testing.T) {
-			task := task{
-				name: tt.name,
-				args: tt.givenTaskArgs,
+			task := task{name: tt.name}
+			for _, n := range strings.Split(tt.givenTaskArgs, " | ") {
+				task.args = append(task.args, arg{name: n, typeof: "string"})
 			}
-			err := processArgs(&task, tt.givenOsArgs)
-			for i := range tt.wantedArgsValues {
-				assert.Equal(t, tt.wantedArgsValues[i].Interface(), task.args[i].value.Interface())
+			err := processArgs(&task, strings.Split(tt.givenOsArgs, " | "))
+			for i := range strings.Split(tt.wantedArgsValues, " | ") {
+				v := reflect.ValueOf(tt.wantedArgsValues[i])
+				assert.Equal(t, v.Interface(), task.args[i].value.Interface())
 			}
 			assert.Equal(t, tt.wantedErr, err)
 		})
 	}
 }
+
+func TestProcessArgsCombinations(t *testing.T) {
+	cases := []struct {
+		name             string
+		givenTaskArgs    string
+		givenOsArgs      string
+		wantedArgsValues string
+		wantedErr        error
+	}{
+		{"one string nothing", "s1", "", "", nil},
+		{"one string param", "s1", "v1", "v1", nil},
+		{"one string option", "s1", "-s1=v1", "v1", nil},
+		{"one string option alt", "s1", "-s1 v1", "v1", nil},
+		{"one param and one option, option first", "s1 | s2", "-s2=v2 | s1", "s1 | s2", nil},
+		{"one param and one option, param first", "s1 | s2", "s1 | -s2=v2", "s1 | s2", nil},
+	}
+	for _, tt := range cases {
+		t.Run(fmt.Sprintf("`%s`", tt.name), func(t *testing.T) {
+			task := task{name: tt.name}
+			for _, n := range strings.Split(tt.givenTaskArgs, " | ") {
+				task.args = append(task.args, arg{name: n, typeof: "string"})
+			}
+			err := processArgs(&task, strings.Split(tt.givenOsArgs, " | "))
+			for i := range strings.Split(tt.wantedArgsValues, " | ") {
+				v := reflect.ValueOf(tt.wantedArgsValues[i])
+				assert.Equal(t, v.Interface(), task.args[i].value.Interface())
+			}
+			assert.Equal(t, tt.wantedErr, err)
+		})
+	}
+}
+
+//func TestProcessArgsParamsTypeCasting(t *testing.T) {
+//	var cases = []struct {
+//		name string
+//		givenTaskArgs []arg
+//		givenOsArgs string
+//		wantedArgsValues []interface{}
+//		wantedErr error
+//	}{
+//		{
+//			"all types params",
+//			[]arg{
+//				{name: "str", typeof: "string"},
+//				{name: "int", typeof: "int"},
+//			},
+//			"bar 5",
+//			[]interface{}{"bar", 5},
+//			nil,
+//		},
+//	}
+//	for _, tt := range cases {
+//		t.Run(fmt.Sprintf("`%s`", tt.name), func(t *testing.T) {
+//			task := task{
+//				name: tt.name,
+//				args: tt.givenTaskArgs,
+//			}
+//			err := processArgs(&task, strings.Split(tt.givenOsArgs, " "))
+//			for i := range tt.wantedArgsValues {
+//				v := reflect.ValueOf(tt.wantedArgsValues[i])
+//				assert.Equal(t, v.Interface(), task.args[i].value.Interface())
+//			}
+//			assert.Equal(t, tt.wantedErr, err)
+//		})
+//	}
+//}
+//
+//func TestProcessArgsOptionsTypeCasting(t *testing.T) {
+//	var cases = []struct {
+//		name string
+//		givenTaskArgs []arg
+//		givenOsArgs string
+//		wantedArgsValues []interface{}
+//		wantedErr error
+//	}{
+//		{
+//			"all types options",
+//			[]arg{
+//				{name: "str", typeof: "string"},
+//				{name: "int", typeof: "int"},
+//				{name: "bool", typeof: "bool"},
+//			},
+//			"-str=bar -int=5 -bool",
+//			[]interface{}{"bar", 5, true},
+//			nil,
+//		},
+//	}
+//	for _, tt := range cases {
+//		t.Run(fmt.Sprintf("`%s`", tt.name), func(t *testing.T) {
+//			task := task{
+//				name: tt.name,
+//				args: tt.givenTaskArgs,
+//			}
+//			err := processArgs(&task, strings.Split(tt.givenOsArgs, " "))
+//			for i := range tt.wantedArgsValues {
+//				v := reflect.ValueOf(tt.wantedArgsValues[i])
+//				assert.Equal(t, v.Interface(), task.args[i].value.Interface())
+//			}
+//			assert.Equal(t, tt.wantedErr, err)
+//		})
+//	}
+//}
