@@ -10,105 +10,76 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"strconv"
 	"strings"
 )
 
 func Run(taskPtrs ...interface{}) {
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
-	file, err := getTasksFile()
-	if err != nil {
-		log.Fatalln(err)
-	}
-	taskCandidates, err := extractTasks(file)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	tasks := attachFuncPointers(taskCandidates, taskPtrs)
+	file := getTasksFile()
+	tasks := extractTasks(file, taskPtrs)
 	if len(os.Args) < 2 {
 		usage(tasks)
 		os.Exit(1)
 	} else {
-		name := os.Args[1]
-		for _, t := range tasks {
-			if t.name == name {
-				err := processArgs(&t, os.Args[2:])
-				if err != nil {
-					log.Fatalln(err)
-				}
-				log.Printf("Task %s%s%s\n", Ok, t.name, Reset)
-				t.call()
-				os.Exit(0)
-			}
+		task, err := resolve(tasks, os.Args)
+		if err != nil {
+			log.Fatalln(err)
 		}
-		log.Fatalf("task %s not found", name)
+		log.Printf("Task %s%s%s\n", Ok, task.name, Reset)
+		task.call()
 	}
 }
 
-func getTasksFile() (string, error) {
+func getTasksFile() string {
 	pcs := make([]uintptr, 1)
 	n := runtime.Callers(3, pcs)
 	if n == 0 {
-		return "", fmt.Errorf("no caller found")
+		log.Fatalln("No caller")
 	}
 	caller := runtime.FuncForPC(pcs[0] - 1)
 	if caller == nil {
-		return "", fmt.Errorf("caller is empty")
+		log.Fatalln("Caller is empty")
 	}
 	file, _ := caller.FileLine(pcs[0] - 1)
 	if file == "" {
-		return "", fmt.Errorf("can't resolve caller file")
+		log.Fatalln("Can't resolve caller file")
 	}
-	return file, nil
+	return file
 }
 
-func extractTasks(file string) (tasks []task, err error) {
+func extractTasks(file string, fptrs []interface{}) (tasks []task) {
 	fset := token.NewFileSet()
-	tree, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
-	if nil != err {
-		return
+	node, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+	if err != nil {
+		log.Fatalln(err)
 	}
-	for _, f := range tree.Decls {
+	for _, f := range node.Decls {
 		fn, ok := f.(*ast.FuncDecl)
 		if !ok || fn.Name.Name == "main" {
 			continue
 		}
-		t := task{
-			name: fn.Name.Name,
-			doc:  strings.Trim(strings.Replace(fn.Doc.Text(), fn.Name.Name, "", 1), "\n "),
-		}
-		for _, a := range fn.Type.Params.List {
-			n := arg{
-				name: a.Names[0].String(),
-			}
-			switch tt := a.Type.(type) {
-			case *ast.Ident:
-				n.typeof = fmt.Sprint(a.Type)
-			case *ast.StarExpr:
-				n.typeof = fmt.Sprint(reflect.ValueOf(a.Type.(*ast.StarExpr).X))
-				n.optional = true
-			default:
-				err = fmt.Errorf("unsupported argument type `%s`", tt)
-			}
-			t.args = append(t.args, n)
-		}
-		tasks = append(tasks, t)
-	}
-	return
-}
-
-func attachFuncPointers(taskCandidates []task, fptrs []interface{}) ([]task) {
-	for i, tc := range taskCandidates {
 		for _, fptr := range fptrs {
 			fnc := runtime.FuncForPC(reflect.ValueOf(fptr).Pointer())
 			name := strings.Split(fnc.Name(), ".")[1]
-			if name == tc.name {
-				taskCandidates[i].fn = reflect.ValueOf(fptr)
+			if name == fn.Name.Name {
+				t := task{
+					name: fn.Name.Name,
+					doc:  strings.Trim(strings.Replace(fn.Doc.Text(), fn.Name.Name, "", 1), "\n "),
+					fn:   reflect.ValueOf(fptr),
+				}
+				for _, a := range fn.Type.Params.List {
+					t.args = append(t.args, arg{
+						name:   a.Names[0].String(),
+						typeof: fmt.Sprint(a.Type),
+					})
+				}
+				tasks = append(tasks, t)
+				break
 			}
 		}
 	}
-	return taskCandidates
+	return
 }
 
 func usage(tasks []task) {
@@ -116,25 +87,33 @@ func usage(tasks []task) {
 	log.Printf("%sUsage:%s\n", Title, Reset)
 	log.Printf("  %s [command] [arguments]\n", os.Args[0])
 	log.Println()
+
 	log.Printf("%sCommands:%s\n", Title, Reset)
 	for _, t := range tasks {
-		var flags []string
+		var args []string
 		for _, a := range t.args {
-			if a.optional {
-				flags = append(flags, fmt.Sprintf("-%s%s%s=%s", Info, a.name, Reset, a.typeof))
-			} else {
-				flags = append(flags, fmt.Sprintf("%s%s%s:%s", Info, a.name, Reset, a.typeof))
-			}
+			args = append(args, fmt.Sprintf("-%s%s%s=%s", Info, a.name, Reset, a.typeof))
 		}
-		log.Printf("  %s%s%s %s  - %s\n", Ok, t.name, Reset, strings.Join(flags, " "), t.doc)
+		log.Printf("  %s%s%s %s  - %s\n", Ok, t.name, Reset, strings.Join(args, " "), t.doc)
 	}
 }
 
-func processArgs(task *task, args []string) error {
-	fs := flag.NewFlagSet(task.name, flag.ContinueOnError)
+func resolve(tasks []task, args []string) (*task, error) {
+	var ct *task
+
+	for _, t := range tasks {
+		if t.name == args[1] {
+			ct = &t
+			break
+		}
+	}
+	if ct == nil {
+		return nil, fmt.Errorf("task not found")
+	}
+
+	fs := flag.NewFlagSet(ct.name, flag.ExitOnError)
 	var flags []interface{}
-	for _, a := range task.args {
-		fmt.Printf("%#v %#v\n", a, a.typeof)
+	for _, a := range ct.args {
 		switch a.typeof {
 		case "string":
 			flags = append(flags, fs.String(a.name, "", ""))
@@ -142,58 +121,30 @@ func processArgs(task *task, args []string) error {
 			flags = append(flags, fs.Int(a.name, 0, ""))
 		case "bool":
 			flags = append(flags, fs.Bool(a.name, false, ""))
-		}
-	}
-	fmt.Printf("%#v\n", flags)
-
-	err := fs.Parse(moveArgsFlagsFirst(args))
-	if err != nil {
-		return fmt.Errorf("bad command arguments: %s", err)
-	}
-
-	for parami, param := range fs.Args() {
-		switch task.args[parami].typeof {
-		case "string":
-			task.args[parami].value = reflect.ValueOf(param)
-		case "int":
-			i, err := strconv.Atoi(param)
-			if err != nil {
-				return fmt.Errorf("can't convert param %s to int: `%s`", task.args[parami].name, err)
-			}
-			task.args[parami].value = reflect.ValueOf(i)
 		default:
-			return fmt.Errorf("unsupported param type `%s`", task.args[parami].typeof)
+			return nil, fmt.Errorf("unsupported task argument type `%s`", a.typeof)
 		}
+	}
+
+	err := fs.Parse(args[2:])
+	if err != nil {
+		return nil, fmt.Errorf("bad command arguments: %s", err)
 	}
 
 	for i, f := range flags {
-		var val reflect.Value
 		switch t := f.(type) {
 		case *string:
-			val = reflect.ValueOf(*t)
+			ct.args[i].value = reflect.ValueOf(*t)
 		case *int:
-			val = reflect.ValueOf(*t)
+			ct.args[i].value = reflect.ValueOf(*t)
 		case *bool:
-			val = reflect.ValueOf(*t)
+			ct.args[i].value = reflect.ValueOf(*t)
 		default:
-			return fmt.Errorf("unsupported option type `%s`", t)
+			return nil, fmt.Errorf("unsupported task argument type `%s`", t)
 		}
-		task.args[len(fs.Args()) + i].value = val
 	}
-	return nil
-}
 
-func moveArgsFlagsFirst(args []string) []string {
-	var flags []string
-	var params []string
-	for _, a := range args {
-		if '-' == a[0] {
-			flags = append(flags, a)
-		} else {
-			params = append(params, a)
-		}
-	}
-	return append(flags, params...)
+	return ct, nil
 }
 
 type task struct {
@@ -206,7 +157,6 @@ type task struct {
 type arg struct {
 	name   string
 	typeof string
-	optional bool
 	value  reflect.Value
 }
 
