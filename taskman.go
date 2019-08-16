@@ -17,7 +17,11 @@ func Run(taskPtrs ...interface{}) {
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
 	file := getTasksFile()
-	tasks := extractTasks(file, taskPtrs)
+	taskCandidates, err := extractTasks(file)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	tasks := attachFuncPointers(taskCandidates, taskPtrs)
 	if len(os.Args) < 2 {
 		usage(tasks)
 		os.Exit(1)
@@ -48,38 +52,49 @@ func getTasksFile() string {
 	return file
 }
 
-func extractTasks(file string, fptrs []interface{}) (tasks []task) {
+func extractTasks(file string) (tasks []task, err error) {
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
-	if err != nil {
-		log.Fatalln(err)
+	tree, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+	if nil != err {
+		return
 	}
-	for _, f := range node.Decls {
+	for _, f := range tree.Decls {
 		fn, ok := f.(*ast.FuncDecl)
 		if !ok || fn.Name.Name == "main" {
 			continue
 		}
+		t := task{
+			name: fn.Name.Name,
+			doc:  strings.Trim(strings.Replace(fn.Doc.Text(), fn.Name.Name, "", 1), "\n "),
+		}
+		for _, a := range fn.Type.Params.List {
+			n := arg{
+				name: a.Names[0].String(),
+			}
+			switch tt := a.Type.(type) {
+			case *ast.Ident:
+				n.typeof = fmt.Sprint(a.Type)
+			default:
+				err = fmt.Errorf("unsupported argument type `%s`", tt)
+			}
+			t.args = append(t.args, n)
+		}
+		tasks = append(tasks, t)
+	}
+	return
+}
+
+func attachFuncPointers(taskCandidates []task, fptrs []interface{}) []task {
+	for i, tc := range taskCandidates {
 		for _, fptr := range fptrs {
 			fnc := runtime.FuncForPC(reflect.ValueOf(fptr).Pointer())
 			name := strings.Split(fnc.Name(), ".")[1]
-			if name == fn.Name.Name {
-				t := task{
-					name: fn.Name.Name,
-					doc:  strings.Trim(strings.Replace(fn.Doc.Text(), fn.Name.Name, "", 1), "\n "),
-					fn:   reflect.ValueOf(fptr),
-				}
-				for _, a := range fn.Type.Params.List {
-					t.args = append(t.args, arg{
-						name:   a.Names[0].String(),
-						typeof: fmt.Sprint(a.Type),
-					})
-				}
-				tasks = append(tasks, t)
-				break
+			if name == tc.name {
+				taskCandidates[i].fn = reflect.ValueOf(fptr)
 			}
 		}
 	}
-	return
+	return taskCandidates
 }
 
 func usage(tasks []task) {
